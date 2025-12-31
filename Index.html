@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NoSQL Databases: A Case Study</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* --- THEME SETTINGS --- */
+        :root {
+            --bg-dark: #0a0a0a;
+            --text-main: #ffffff;
+            --text-muted: #a0a0a0;
+            --redis-red: #ff4444;
+            --mongo-green: #00ed64;
+            --accent-blue: #22d3ee;
+            --accent-purple: #8b5cf6;
+            --card-bg: rgba(20, 20, 20, 0.6);
+            --border-color: rgba(255, 255, 255, 0.1);
+                        --bg-dark: #0f172a;
+            --text-main: #f8fafc;
+            --text-muted: #cbd5e1;
+            --accent-cyan: #22d3ee;
+            --accent-purple: #a78bfa;
+            --accent-green: #34d399;
+            --card-bg: rgba(30, 41, 59, 0.6);
+        }
+
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background-color: var(--bg-dark);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: var(--text-main);
+            overflow: hidden;
+        }
+
+        /* --- BACKGROUND ANIMATION (The Blobs) --- */
+        .background-fx {
+            position: absolute; width: 100%; height: 100%; top: 0; left: 0; z-index: 0;
+            overflow: hidden;
+        }
+        .blob {
+            position: absolute; filter: blur(80px); opacity: 0.4;
+            animation: float 20s infinite ease-in-out;
+        }
+        .blob-1 { top: -10%; left: -10%; width: 50vw; height: 50vw; background: var(--accent-purple); }
+        .blob-2 { bottom: -10%; right: -10%; width: 40vw; height: 40vw; background: var(--accent-blue); animation-delay: -5s; }
+        .blob-3 { top: 40%; left: 40%; width: 30vw; height: 30vw; background: var(--mongo-green); animation-delay: -10s; opacity: 0.2; }
+
+        @keyframes float {
+            0% { transform: translate(0, 0) rotate(0deg); }
+            50% { transform: translate(40px, -40px) rotate(5deg); }
+            100% { transform: translate(0, 0) rotate(0deg); }
+        }
+
+        /* --- SLIDE LAYOUT --- */
+        .slide-container {
+            position: relative; z-index: 10; width: 100%; height: 100%;
+            display: flex; justify-content: center; align-items: center;
+        }
+        .slide {
+            display: none; width: 85%; max-width: 1200px; height: 85%;
+            flex-direction: column; justify-content: center;
+            opacity: 0; transform: translateY(30px);
+            transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); /* Bouncy transition */
+        }
+        .slide.active { display: flex; opacity: 1; transform: translateY(0); }
+
+        /* --- TYPOGRAPHY --- */
+        h1 { font-size: 4rem; font-weight: 800; margin-bottom: 0.5rem; background: linear-gradient(to right, #fff, #94a3b8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        h2 { font-size: 2.5rem; color: var(--accent-blue); margin-bottom: 1.5rem; display: flex; align-items: center; gap: 15px; border-left: 5px solid var(--accent-purple); padding-left: 20px; }
+        h3 { font-size: 1.5rem; margin-bottom: 1rem; color: white; }
+        p, li { font-size: 1.2rem; line-height: 1.6; color: var(--text-muted); margin-bottom: 10px; }
+        strong { color: white; font-weight: 600; }
+        .highlight { color: var(--accent-blue); font-weight: bold; }
+
+        /* --- CARDS & GRID --- */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: stretch; }
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; }
+        
+        .card {
+            background: var(--card-bg); border: 1px solid var(--border-color);
+            border-radius: 16px; padding: 30px; backdrop-filter: blur(12px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            transition: transform 0.3s;
+        }
+        .card:hover { transform: translateY(-5px); border-color: var(--accent-blue); }
+
+        /* --- CHARTS --- */
+        .bar-container { margin-bottom: 20px; }
+        .bar-label { display: flex; justify-content: space-between; margin-bottom: 8px; font-weight: 600; font-size: 1.1rem; }
+        .bar-track { background: rgba(255,255,255,0.1); height: 24px; border-radius: 12px; overflow: hidden; }
+        .bar-fill { height: 100%; border-radius: 12px; width: 0; transition: width 1.5s cubic-bezier(0.4, 0, 0.2, 1); }
+
+        /* --- REAL DATA TABLE (Custom Style) --- */
+        .data-table {
+            width: 100%; border-collapse: collapse; margin-top: 15px;
+            font-family: 'Consolas', monospace; font-size: 1.1rem;
+        }
+        .data-table th { text-align: left; color: #888; border-bottom: 1px solid #333; padding: 10px; }
+        .data-table td { padding: 15px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; margin-left: 10px; }
+        .badge-red { background: rgba(255, 68, 68, 0.2); color: var(--redis-red); border: 1px solid var(--redis-red); }
+        .badge-green { background: rgba(0, 237, 100, 0.1); color: var(--mongo-green); }
+
+        /* --- CODE BLOCK --- */
+        .code-block {
+            font-family: 'Consolas', monospace; background: #0f172a; padding: 20px;
+            border-radius: 10px; border-left: 4px solid var(--mongo-green);
+            color: #e2e8f0; font-size: 0.9rem; overflow: hidden; position: relative;
+        }
+        .code-lang { position: absolute; top: 0; right: 0; background: #333; color: #fff; padding: 2px 8px; font-size: 0.7rem; }
+
+        /* --- NAVIGATION --- */
+        .controls { position: fixed; bottom: 30px; right: 40px; display: flex; gap: 20px; z-index: 50; }
+        .btn {
+            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+            color: white; width: 50px; height: 50px; border-radius: 50%;
+            cursor: pointer; font-size: 1.2rem; transition: 0.3s; display: flex; justify-content: center; align-items: center;
+        }
+        .btn:hover { background: var(--accent-blue); color: #000; transform: scale(1.1); box-shadow: 0 0 15px var(--accent-blue); }
+        .btn:disabled { opacity: 0.3; cursor: default; transform: none; box-shadow: none; }
+        .slide-counter { position: fixed; bottom: 45px; left: 40px; font-family: monospace; color: #666; font-size: 1.2rem; z-index: 50; }
+
+    </style>
+</head>
+<body>
+
+    <!-- Background Animation -->
+    <div class="background-fx">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <!-- Slides -->
+    <div class="slide-container">
+
+        <!-- Slide 1: Title -->
+        <div class="slide active">
+            <div style="text-align: center;">
+                <i class="fa-solid fa-database" style="font-size: 6rem; color: var(--accent-blue); margin-bottom: 2rem; animation: float 6s infinite;"></i>
+                <h1>Experimental Evaluation of<br>NoSQL Databases</h1>
+                <p style="font-size: 1.8rem; color: var(--accent-purple); margin-top: 1rem;">A Comparative Case Study</p>
+                
+                <div style="margin-top: 60px; display: inline-block; text-align: left; background: rgba(255,255,255,0.05); padding: 20px 40px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);">
+                    <p style="margin: 5px 0;"><i class="fa-solid fa-user-graduate"></i> Student: <strong>Ahmad Mousa</strong></p>
+                    <p style="margin: 5px 0;"><i class="fa-solid fa-file-alt"></i> Based on: <strong>Abramova et al. (2014)</strong></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 2: Introduction -->
+        <div class="slide">
+            <h2><i class="fa-solid fa-flag"></i> 1. Introduction</h2>
+            <div class="grid-2">
+                <div>
+                    <h3>The Shift to NoSQL</h3>
+                    <p>Relational Databases (SQL) have been the industry standard for decades. However, the rise of <strong>Big Data</strong> exposed critical limitations:</p>
+                    <ul>
+                        <li><strong class="highlight">Scalability:</strong> SQL struggles to scale horizontally across servers.</li>
+                        <li><strong class="highlight">Flexibility:</strong> Rigid schemas make it hard to handle unstructured data.</li>
+                    </ul>
+                </div>
+                <div class="card" style="border-color: var(--accent-blue);">
+                    <h3>Study Objective</h3>
+                    <p>The goal of this assignment is to quantitatively evaluate and compare five NoSQL databases to answer:</p>
+                    <p style="font-size: 1.3rem; color: white; font-weight: bold; text-align: center; margin: 20px 0;">
+                        "Which database offers the best Execution Time for specific workloads?"
+                    </p>
+                    <p style="text-align: center; font-size: 0.9rem; color: var(--text-muted);"><i class="fa-solid fa-bolt"></i> Focusing on Read vs. Write Performance</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 3: Background -->
+        <div class="slide">
+            <h2><i class="fa-solid fa-book-open"></i> 2. Background of the Study</h2>
+            <p>To understand the results, we first define the core concepts distinguishing NoSQL from SQL.</p>
+            <div class="grid-3" style="margin-top: 30px;">
+                <div class="card">
+                    <i class="fa-solid fa-server" style="font-size: 2rem; color: var(--accent-purple); margin-bottom: 15px;"></i>
+                    <h3>ACID vs. BASE</h3>
+                    <p><strong>SQL (ACID):</strong> Strict. Data is always 100% correct immediately (Banks).</p>
+                    <p><strong>NoSQL (BASE):</strong> Flexible. Data becomes correct eventually (Social Media likes).</p>                </div>
+                <div class="card">
+                    <i class="fa-solid fa-shapes" style="font-size: 2rem; color: var(--accent-blue); margin-bottom: 15px;"></i>
+                    <h3>Database Types</h3>
+                    <ul style="font-size: 0.9rem; padding-left: 15px;">
+                        <li><strong>Key-Value:</strong> Redis (RAM-based)</li>
+                        <li><strong>Column-Family:</strong> Cassandra, HBase</li>
+                        <li><strong>Document:</strong> MongoDB</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <i class="fa-solid fa-network-wired" style="font-size: 2rem; color: var(--mongo-green); margin-bottom: 15px;"></i>
+                    <h3>CAP Theorem</h3>
+                    <p style="font-size: 0.95rem;">In distributed systems, you can only guarantee two: Consistency, Availability, or Partition Tolerance.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 4: Methodology -->
+        <div class="slide">
+            <h2><i class="fa-solid fa-flask"></i> 3. Methodology Overview</h2>
+            <div class="grid-2">
+                <div>
+                    <p>The research paper established a controlled benchmarking environment:</p>
+                    <ul style="margin-top: 20px;">
+                        <li><strong>Benchmark Tool:</strong> YCSB (Yahoo! Cloud Serving Benchmark).</li>
+                        <li><strong>Dataset:</strong> 600,000 Records (1KB each).</li>
+                        <li><strong>Hardware:</strong> Virtual Machine with <span class="highlight">2GB RAM</span>.</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3>Tested Workloads</h3>
+                    <div style="display: flex; flex-direction: column; gap: 15px; margin-top: 15px;">
+                        <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px;">
+                            <strong style="color: var(--accent-blue);">Workload A:</strong> Balanced (50% Read / 50% Update)
+                        </div>
+                        <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px;">
+                            <strong style="color: var(--mongo-green);">Workload C:</strong> Read-Heavy (100% Read)
+                        </div>
+                        <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px;">
+                            <strong style="color: var(--redis-red);">Workload H:</strong> Write-Heavy (100% Update)
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 5: Findings (Paper) -->
+        <div class="slide">
+            <h2><i class="fa-solid fa-chart-bar"></i> 4. Key Findings & Analysis</h2>
+            <div class="grid-2">
+                <!-- Chart 1: Read -->
+                <div class="card">
+                    <h3><i class="fa-solid fa-eye"></i> Reading Speed (Lower is Better)</h3>
+                    <!-- Redis -->
+                    <div class="bar-container">
+                        <div class="bar-label"><span>Redis</span> <span class="highlight">0.5s</span></div>
+                        <div class="bar-track"><div class="bar-fill" style="width: 5%; background: var(--accent-cyan);"></div></div>
+                    </div>
+                    <!-- Mongo -->
+                    <div class="bar-container">
+                        <div class="bar-label"><span>MongoDB</span> <span>16.0s</span></div>
+                        <div class="bar-track"><div class="bar-fill" style="width: 45%; background: var(--accent-green);"></div></div>
+                    </div>
+                    <!-- HBase -->
+                    <div class="bar-container">
+                        <div class="bar-label"><span>HBase</span> <span>28.2s</span></div>
+                        <div class="bar-track"><div class="bar-fill" style="width: 80%; background: var(--accent-purple);"></div></div>
+                    </div>
+                    <p style="font-size: 0.9rem; margin-top: 15px;"><strong>Analysis:</strong> Redis wins easily because it reads from Memory (RAM). HBase is slow here because it reads from Disk.</p>
+                </div>
+
+                <!-- Chart 2: Write -->
+                <div class="card">
+                    <h3><i class="fa-solid fa-pen"></i> Writing Speed (Lower is Better)</h3>
+                    <!-- Redis -->
+                    <div class="bar-container">
+                        <div class="bar-label"><span>Redis</span> <span class="highlight">1.5s</span></div>
+                        <div class="bar-track"><div class="bar-fill" style="width: 8%; background: var(--accent-cyan);"></div></div>
+                    </div>
+                    <!-- Cassandra -->
+                    <div class="bar-container">
+                        <div class="bar-label"><span>Cassandra</span> <span>21.6s</span></div>
+                        <div class="bar-track"><div class="bar-fill" style="width: 50%; background: #3b82f6;"></div></div>
+                    </div>
+                    <!-- Mongo -->
+                    <div class="bar-container">
+                        <div class="bar-label"><span>MongoDB</span> <span>54.7s</span></div>
+                        <div class="bar-track"><div class="bar-fill" style="width: 95%; background: var(--accent-green);"></div></div>
+                    </div>
+                    <p style="font-size: 0.9rem; margin-top: 15px;"><strong>Analysis:</strong> Cassandra is built for writing logs, so it's fast. MongoDB struggled with locks.</p>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 30px;">
+                <span class="highlight" style="font-size: 1.4rem;">Main Takeaway:</span> In-Memory databases are faster, but Column-Family databases scale better for writes.
+            </div>
+        </div>
+
+        <!-- Slide 6: YOUR EXPERIMENT (The Star Show) -->
+        <div class="slide">
+            <h2><i class="fa-solid fa-microchip"></i> 5. My Validation Experiment (2025)</h2>
+            <p>I replicated the benchmark on my local machine using Python to verify the results with modern hardware.</p>
+            
+            <div class="grid-2">
+                <!-- Left: The Code -->
+                <div class="code-block">
+                    <div class="code-lang">Python</div>
+<span style="color: #c678dd;">import</span> time, redis, pymongo
+
+<span style="color: #5c6370;"># 1. Benchmark Redis Write</span>
+start = time.time()
+<span style="color: #c678dd;">for</span> i <span style="color: #c678dd;">in</span> range(10000):
+    r_client.set(f<span style="color: #98c379;">"user_{i}"</span>, <span style="color: #98c379;">"data"</span>)
+redis_time = time.time() - start
+
+<span style="color: #5c6370;"># 2. Benchmark Mongo Write</span>
+start = time.time()
+<span style="color: #c678dd;">for</span> i <span style="color: #c678dd;">in</span> range(10000):
+    col.insert_one({<span style="color: #98c379;">"_id"</span>: i, <span style="color: #98c379;">"v"</span>: <span style="color: #98c379;">"data"</span>})
+mongo_time = time.time() - start
+                </div>
+
+                <!-- Right: The Real Data -->
+                <div class="card" style="border-color: var(--accent-blue);">
+                    <h3><i class="fa-solid fa-tachometer-alt"></i> My Real Results</h3>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>DB</th>
+                                <th>Task</th>
+                                <th>Time</th>
+                                <th>Latency</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="color: var(--redis-red); font-weight: bold;">Redis</td>
+                                <td>Write</td>
+                                <td>1.05 s</td>
+                                <td>0.10 ms <span class="badge badge-red">9.1x Faster</span></td>
+                            </tr>
+                            <tr>
+                                <td style="color: var(--mongo-green);">MongoDB</td>
+                                <td>Write</td>
+                                <td>9.60 s</td>
+                                <td>0.96 ms</td>
+                            </tr>
+                            <tr style="border-top: 1px solid #333;">
+                                <td style="color: var(--redis-red); font-weight: bold;">Redis</td>
+                                <td>Read</td>
+                                <td>4.05 s</td>
+                                <td>0.40 ms <span class="badge badge-red">1.8x Faster</span></td>
+                            </tr>
+                            <tr>
+                                <td style="color: var(--mongo-green);">MongoDB</td>
+                                <td>Read</td>
+                                <td>7.23 s</td>
+                                <td>0.72 ms</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 7: Real World App -->
+        <div class="slide">
+            <h2><i class="fa-solid fa-globe"></i> 6. Real-World Application</h2>
+            <div class="grid-2">
+                <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+                    <div style="background: rgba(139, 92, 246, 0.2); padding: 40px; border-radius: 50%; margin-bottom: 20px;">
+                        <i class="fa-solid fa-gamepad" style="font-size: 5rem; color: var(--accent-purple);"></i>
+                    </div>
+                    <h3>Gaming Leaderboards</h3>
+                    <p style="font-size: 1rem; color: var(--text-muted);">(e.g., Call of Duty, Fortnite)</p>
+                </div>
+                <div>
+                    <h3>Why Redis?</h3>
+                    <p>Based on my experiment showing <strong>0.10ms latency</strong>, Redis is the only viable choice for real-time ranking.</p>
+                    <div class="card">
+                        <strong style="color: var(--accent-blue);">The Solution:</strong>
+                        <ul style="margin-top: 10px; font-size: 1rem;">
+                            <li>Use Redis <strong>Sorted Sets</strong> for scores.</li>
+                            <li>Updates happen in-memory instantly.</li>
+                            <li>Players see their rank change immediately after a match.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 8: Conclusion -->
+        <div class="slide">
+            <h2><i class="fa-solid fa-clipboard-check"></i> 7. Conclusion</h2>
+            <p>The experimental evaluation confirms that hardware architecture dictates database performance.</p>
+            
+            <div class="grid-3" style="margin-top: 40px;">
+                <div class="card" style="text-align: center;">
+                    <i class="fa-solid fa-bolt" style="font-size: 2.5rem; color: var(--redis-red); margin-bottom: 15px;"></i>
+                    <h3>Speed</h3>
+                    <p style="font-size: 0.9rem;"><strong>Redis</strong> is unbeatable for raw speed due to In-Memory storage.</p>
+                </div>
+                <div class="card" style="text-align: center;">
+                    <i class="fa-solid fa-server" style="font-size: 2.5rem; color: var(--accent-blue); margin-bottom: 15px;"></i>
+                    <h3>Scalability</h3>
+                    <p style="font-size: 0.9rem;"><strong>Cassandra</strong> wins for massive write-heavy logs.</p>
+                </div>
+                <div class="card" style="text-align: center;">
+                    <i class="fa-solid fa-layer-group" style="font-size: 2.5rem; color: var(--mongo-green); margin-bottom: 15px;"></i>
+                    <h3>Flexibility</h3>
+                    <p style="font-size: 0.9rem;"><strong>MongoDB</strong> offers the best balance for complex data structures.</p>
+                </div>
+            </div>
+            
+            <div style="margin-top: 40px; text-align: center;">
+                <p><strong>Final Verdict:</strong> There is no "Best" database. You must benchmark your specific workload.</p>
+            </div>
+        </div>
+
+        <!-- Slide 9: References -->
+        <div class="slide">
+            <h2><i class="fa-solid fa-list"></i> References</h2>
+            <div class="card">
+                <ul style="font-family: 'Times New Roman', serif; font-size: 1.2rem; line-height: 2;">
+                    <li>Abramova, E., Bernardino, J., & Kalinina, O. (2014). Experimental Evaluation of NoSQL Databases. <em>Open Journal of Databases (OJDB)</em>.</li>
+                    <li>Cooper, B. F., et al. (2010). Benchmarking cloud serving systems with YCSB.</li>
+                    <li>Python Benchmark Script (2025) - <em>Personal Experiment Data</em>.</li>
+                </ul>
+            </div>
+            <div style="text-align: center; margin-top: 50px;">
+                <h1>Thank You!</h1>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- UI Controls -->
+    <div class="slide-counter" id="counter">1 / 9</div>
+    <div class="controls">
+        <button class="btn" onclick="prevSlide()" id="btnPrev"><i class="fa-solid fa-chevron-left"></i></button>
+        <button class="btn" onclick="nextSlide()" id="btnNext"><i class="fa-solid fa-chevron-right"></i></button>
+    </div>
+
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const counter = document.getElementById('counter');
+        const btnPrev = document.getElementById('btnPrev');
+        const btnNext = document.getElementById('btnNext');
+
+        function updateSlide() {
+            slides.forEach((slide, index) => {
+                slide.classList.remove('active');
+                if (index === currentSlide) {
+                    slide.classList.add('active');
+                }
+            });
+            
+            counter.innerText = `${currentSlide + 1} / ${slides.length}`;
+            btnPrev.disabled = currentSlide === 0;
+            btnNext.disabled = currentSlide === slides.length - 1;
+        }
+
+        function nextSlide() {
+            if (currentSlide < slides.length - 1) {
+                currentSlide++;
+                updateSlide();
+            }
+        }
+
+        function prevSlide() {
+            if (currentSlide > 0) {
+                currentSlide--;
+                updateSlide();
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ') nextSlide();
+            if (e.key === 'ArrowLeft') prevSlide();
+        });
+
+        // Initialize
+        updateSlide();
+    </script>
+</body>
+</html>
